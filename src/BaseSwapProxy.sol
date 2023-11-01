@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
-
-import "prb-math/contracts/PRBMathSD59x18.sol";
-import "prb-math/contracts/PRBMathUD60x18.sol";
+import {SD59x18} from "@prb/math/SD59x18.sol";
+import {UD60x18} from "@prb/math/UD60x18.sol";
 
 import "./libraries/SafeCast160.sol";
 
@@ -17,6 +15,7 @@ import "./interfaces/IERC20Extension.sol";
 import "./interfaces/IBaseSwapProxy.sol";
 import "./interfaces/IVault.sol";
 import "./interfaces/IFeedRegistry.sol";
+import "./interfaces/IUniswapV2Router02.sol";
 
 /// @title BaseSwapProxy
 abstract contract BaseSwapProxy is
@@ -26,10 +25,9 @@ abstract contract BaseSwapProxy is
     ReentrancyGuard
 {
     // Using Fixed point calculations for these types
-    using PRBMathSD59x18 for int256;
-    using PRBMathUD60x18 for uint256;
+    using SD59x18 for int256;
+    using UD60x18 for uint256;
     using SafeCast160 for uint256;
-    using UniswapV2Helpers for IUniswapV2Router02;
     using SafeERC20 for IERC20Extension;
 
     IERC20Extension public immutable WETH =
@@ -41,10 +39,10 @@ abstract contract BaseSwapProxy is
 
     // Chainlink feedRegistry
     IFeedRegistry public immutable feedRegistry =
-        FeedRegistryInterface(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf);
+        IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf);
 
-    IUniswapV2Router02 public immutable uniswapV2Router =
-        IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+    IUniswapV2Router public immutable uniswapV2Router =
+        IUniswapV2Router(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
     IPermit2 public immutable permit2 =
         IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
@@ -58,7 +56,7 @@ abstract contract BaseSwapProxy is
     receive() external payable {}
 
     constructor(address _admin) {
-        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
     /// @dev Allows the admin to update the vault contract

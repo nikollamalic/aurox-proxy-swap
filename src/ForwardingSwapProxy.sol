@@ -6,9 +6,6 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "prb-math/contracts/PRBMathSD59x18.sol";
-import "prb-math/contracts/PRBMathUD60x18.sol";
-
 import "./interfaces/IERC20Extension.sol";
 
 import "./BaseSwapProxy.sol";
@@ -22,11 +19,6 @@ contract ForwardingSwapProxy is
     BaseSwapProxy,
     Whitelist
 {
-    // Using Fixed point calculations for these types
-    using PRBMathSD59x18 for int256;
-    using PRBMathUD60x18 for uint256;
-    using SafeERC20 for IERC20Extension;
-
     constructor(address _admin) BaseSwapProxy(_admin) Whitelist(_admin) {}
 
     function _validateSwap(
