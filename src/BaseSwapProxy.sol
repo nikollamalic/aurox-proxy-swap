@@ -8,17 +8,15 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 
-import "@chainlink/contracts/src/v0.8/interfaces/FeedRegistryInterface.sol";
-
 import "prb-math/contracts/PRBMathSD59x18.sol";
 import "prb-math/contracts/PRBMathUD60x18.sol";
 
-import "./libraries/UniswapHelpers.sol";
 import "./libraries/SafeCast160.sol";
 
 import "./interfaces/IERC20Extension.sol";
 import "./interfaces/IBaseSwapProxy.sol";
 import "./interfaces/IVault.sol";
+import "./interfaces/IFeedRegistry.sol";
 
 /// @title BaseSwapProxy
 abstract contract BaseSwapProxy is
@@ -42,7 +40,7 @@ abstract contract BaseSwapProxy is
         IERC20Extension(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
     // Chainlink feedRegistry
-    FeedRegistryInterface public immutable feedRegistry =
+    IFeedRegistry public immutable feedRegistry =
         FeedRegistryInterface(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf);
 
     IUniswapV2Router02 public immutable uniswapV2Router =
@@ -612,6 +610,7 @@ abstract contract BaseSwapProxy is
 
         // Try and get a rate from chainlink first
         uint256 chainlinkRate = _getChainlinkRate(_fromToken, _toToken);
+
         if (chainlinkRate != 0) return chainlinkRate;
 
         // Fallback to uniswap V2 if needed
