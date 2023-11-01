@@ -6,6 +6,10 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import "v3-periphery/interfaces/ISwapRouter.sol";
+import "v3-periphery/interfaces/IQuoter.sol";
+import "v3-periphery/libraries/PoolAddress.sol";
+
 import {SD59x18} from "@prb/math/SD59x18.sol";
 import {UD60x18} from "@prb/math/UD60x18.sol";
 
@@ -15,7 +19,6 @@ import "./interfaces/IERC20Extension.sol";
 import "./interfaces/IBaseSwapProxy.sol";
 import "./interfaces/IVault.sol";
 import "./interfaces/IFeedRegistry.sol";
-import "./interfaces/IUniswapV2Router02.sol";
 
 /// @title BaseSwapProxy
 abstract contract BaseSwapProxy is
@@ -41,11 +44,14 @@ abstract contract BaseSwapProxy is
     IFeedRegistry public immutable feedRegistry =
         IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf);
 
-    IUniswapV2Router public immutable uniswapV2Router =
-        IUniswapV2Router(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+    ISwapRouter public immutable uniswapV3Router =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
 
     IPermit2 public immutable permit2 =
         IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
+
+    IQuoter public immutable quoter =
+        IQouter(0xb27308f9f90d607463bb33ea1bebb41c27ce5ab6);
 
     IVault public vault;
 
@@ -155,7 +161,9 @@ abstract contract BaseSwapProxy is
             amountReturnedAfterFee
         );
 
-        (uint256 swappedAmountIn, ) = uniswapV2Router._swapTokensForExactETH(
+
+
+        (uint256 swappedAmountIn, ) = uniswapV3Router._swapTokensForExactETH(
             _toToken,
             _feeTotalInETH,
             amountReturnedAfterFee,
@@ -556,7 +564,7 @@ abstract contract BaseSwapProxy is
         return 0;
     }
 
-    function _getUniswapV2Rate(
+    function _getUniswapV3Rate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
     ) internal view returns (uint256) {
@@ -569,26 +577,18 @@ abstract contract BaseSwapProxy is
             _toToken = WETH;
         }
 
-        // The rate fetching path
-        address[] memory path = UniswapV2Helpers._returnUniswapV2Path(
-            _fromToken,
-            _toToken
-        );
+        uint256 amountIn = 1 * 10 ** _getDecimals(_fromToken);
 
-        // The return path function will return an array of 0x0 addresses if it can't find a valid path
-        if (path.length == 0) return 0;
-
-        // To calculate the amount we need to provide an amountIn. This needs to be normalised based on the amount of decimals in the given _fromToken.
-        uint8 inputDecimals = _getDecimals(_fromToken);
-
-        // Apply the decimals to the amount
-        uint256 amountIn = 1 * 10 ** inputDecimals;
-
-        // Safely call the method
-        try uniswapV2Router.getAmountsOut(amountIn, path) returns (
-            uint256[] memory rate
-        ) {
-            return rate[path.length - 1];
+        try
+            quoter.quoteExactInputSingle(
+                address(_fromToken),
+                address(_toToken),
+                3000,
+                amountIn,
+                0
+            )
+        returns (uint256 amountOut) {
+            return amountOut / amountIn;
         } catch {
             return 0;
         }
@@ -606,15 +606,13 @@ abstract contract BaseSwapProxy is
             return 1 ether;
         }
 
-        // Try and get a rate from chainlink first
         uint256 chainlinkRate = _getChainlinkRate(_fromToken, _toToken);
 
         if (chainlinkRate != 0) return chainlinkRate;
 
-        // Fallback to uniswap V2 if needed
-        uint256 uniswapV2Rate = _getUniswapV2Rate(_fromToken, _toToken);
+        uint256 uniswapRate = _getUniswapV3Rate(_fromToken, _toToken);
 
-        if (uniswapV2Rate != 0) return uniswapV2Rate;
+        if (uniswapRate != 0) return uniswapRate;
 
         revert("No Rate Found");
     }
@@ -680,7 +678,8 @@ abstract contract BaseSwapProxy is
         _token.safeApprove(_spender, type(uint256).max);
     }
 
-    /// @notice This method is targeted at handling approvals when swapping through Uniswap. The difference being Uniswap doesn't support swapping WETH -> ETH and we will instead wrap the ETH using the WETH contract directly. So modify the approval address if the conditions are met
+    /// @notice This method is targeted at handling approvals when swapping through Uniswap.
+    /// The difference being Uniswap doesn't support swapping WETH -> ETH and we will instead wrap the ETH using the WETH contract directly. So modify the approval address if the conditions are met
     /// @param _fromToken The token to do unlimited approvals for
     /// @param _toToken The token that we are swapping into
     /// @param _amount The amount to validate the approval balance for
@@ -694,7 +693,7 @@ abstract contract BaseSwapProxy is
         } else {
             _handleApprovalFromThis(
                 _fromToken,
-                address(uniswapV2Router),
+                address(uniswapV3Router),
                 _amount
             );
         }

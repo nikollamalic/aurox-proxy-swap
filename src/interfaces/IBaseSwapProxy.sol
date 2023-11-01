@@ -58,11 +58,14 @@ interface IBaseSwapProxy {
     ) external payable;
 
     /// @notice This function calculates the exchange rate between the _fromToken and _toToken
-    /// @dev This function tries to lookup the rate through chainlink first and if the request fails it then looks for a rate through Uniswap V2. If no rate can be found the function reverts.
+    /// @dev This function tries to lookup the rate through chainlink first and if the request fails it then looks for a rate through Uniswap V3. If no rate can be found the function reverts.
     /// @param _fromToken The token the user is swapping with
     /// @param _toToken The token the user wwants
     /// @return The exchange rate
-    function getExchangeRate(IERC20Extension _fromToken, IERC20Extension _toToken) external view returns (uint256);
+    function getExchangeRate(
+        IERC20Extension _fromToken,
+        IERC20Extension _toToken
+    ) external view returns (uint256);
 
     /// @notice This function tries to calculate the exchange rate between the two tokens using chainlink
     /// @dev This function returns 0 if no rate can be found
@@ -74,11 +77,15 @@ interface IBaseSwapProxy {
         IERC20Extension _toToken
     ) external view returns (uint256 exchangeRate);
 
-    /// @notice This function tries to find a rate using Uniswap V2. It gets the spot ratio between _fromToken and _toToken. This is typically a pretty unsafe operation and susceptible to MEV and sandwich attacks. This is somewhat mitigated because all swap transactions will be submitted through flashbots, which is private RPC.
+    /// @notice This function tries to find a rate using Uniswap V3.
+    /// It gets the spot ratio between _fromToken and _toToken.
     /// @param _fromToken The token the user is swapping with
     /// @param _toToken The token the user wwants
     /// @return exchangeRate The exchange rate or 0 if no rate is found
-    function getUniswapV2Rate(IERC20Extension _fromToken, IERC20Extension _toToken) external view returns (uint256);
+    function getUniswapV3Rate(
+        IERC20Extension _fromToken,
+        IERC20Extension _toToken
+    ) external view returns (uint256);
 
     /// @notice This function calculates the percentage fee amount in ETH for the _fromToken the user is swapping from. It is deducts the _gasRefund value to ensure the user is charged correctly
     /// @param _fromToken The token the user is swapping from
@@ -90,5 +97,8 @@ interface IBaseSwapProxy {
         IERC20Extension _fromToken,
         uint256 _amount,
         uint256 _gasRefund
-    ) external view returns (uint256 feeTotalInETH, uint256 feeTotalInFromToken);
+    )
+        external
+        view
+        returns (uint256 feeTotalInETH, uint256 feeTotalInFromToken);
 }

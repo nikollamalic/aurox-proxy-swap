@@ -128,11 +128,11 @@ contract ForwardingSwapProxy is
         return _getChainlinkRate(_fromToken, _toToken);
     }
 
-    function getUniswapV2Rate(
+    function getUniswapV3Rate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
     ) external view override returns (uint256) {
-        return _getUniswapV2Rate(_fromToken, _toToken);
+        return _getUniswapV3Rate(_fromToken, _toToken);
     }
 
     function calculatePercentageFeeInETH(
