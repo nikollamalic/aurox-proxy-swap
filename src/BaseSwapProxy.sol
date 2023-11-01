@@ -14,6 +14,7 @@ import {SD59x18} from "@prb/math/SD59x18.sol";
 import {UD60x18} from "@prb/math/UD60x18.sol";
 
 import "./libraries/SafeCast160.sol";
+import "./libraries/UniswapV3Helper.sol";
 
 import "./interfaces/IERC20Extension.sol";
 import "./interfaces/IBaseSwapProxy.sol";
@@ -27,6 +28,8 @@ abstract contract BaseSwapProxy is
     Pausable,
     ReentrancyGuard
 {
+    UniswapV3Helper uniswapV3Helper;
+
     // Using Fixed point calculations for these types
     using SD59x18 for int256;
     using UD60x18 for uint256;
@@ -161,16 +164,14 @@ abstract contract BaseSwapProxy is
             amountReturnedAfterFee
         );
 
-
-
-        (uint256 swappedAmountIn, ) = uniswapV3Router._swapTokensForExactETH(
+        uint256 amountOut = uniswapV3Helper.exactInputSingle(
             _toToken,
-            _feeTotalInETH,
+            WETH,
             amountReturnedAfterFee,
-            address(this)
+            0
         );
 
-        amountReturnedAfterFee -= swappedAmountIn;
+        amountReturnedAfterFee -= amountOut;
 
         require(
             amountReturnedAfterFee > _minimumReturnAmount,
@@ -579,19 +580,7 @@ abstract contract BaseSwapProxy is
 
         uint256 amountIn = 1 * 10 ** _getDecimals(_fromToken);
 
-        try
-            quoter.quoteExactInputSingle(
-                address(_fromToken),
-                address(_toToken),
-                3000,
-                amountIn,
-                0
-            )
-        returns (uint256 amountOut) {
-            return amountOut / amountIn;
-        } catch {
-            return 0;
-        }
+        return uniswapV3Helper.getQuote(_fromToken, _toToken, amountIn);
     }
 
     function _getExchangeRate(
