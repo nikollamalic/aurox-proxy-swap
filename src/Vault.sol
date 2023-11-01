@@ -1,4 +1,4 @@
-import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
+import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 
 import "./interfaces/IVault.sol";
 
@@ -12,9 +12,9 @@ contract Vault is AccessControlEnumerable, IVault {
     uint256 public walletBalanceLimit;
 
     constructor(address _admin) {
-        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
-        _setupRole(HOT_WALLET_ADMIN, _admin);
+        _grantRole(HOT_WALLET_ADMIN, _admin);
         _setRoleAdmin(HOT_WALLET, HOT_WALLET_ADMIN);
     }
 
@@ -31,21 +31,18 @@ contract Vault is AccessControlEnumerable, IVault {
         emit FeesClaimed(msg.sender, thisBalance);
     }
 
-    function paidFees(address _sender, uint256 _amount)
-        external
-        payable
-        override
-    {
+    function paidFees(
+        address _sender,
+        uint256 _amount
+    ) external payable override {
         require(msg.value >= _amount, "Not enough ETH sent");
 
         emit PaidFees(_sender, _amount);
     }
 
-    function setWalletBalanceLimit(uint256 _walletBalanceLimit)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setWalletBalanceLimit(
+        uint256 _walletBalanceLimit
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         walletBalanceLimit = _walletBalanceLimit;
     }
 

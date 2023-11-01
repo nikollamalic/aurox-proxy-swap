@@ -1,4 +1,3 @@
-
 interface IPermit2 {
     struct PermitDetails {
         // ERC20 token address

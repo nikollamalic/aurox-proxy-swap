@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
@@ -21,7 +21,12 @@ import "./interfaces/IBaseSwapProxy.sol";
 import "./interfaces/IVault.sol";
 
 /// @title BaseSwapProxy
-abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Pausable, ReentrancyGuard {
+abstract contract BaseSwapProxy is
+    IBaseSwapProxy,
+    AccessControlEnumerable,
+    Pausable,
+    ReentrancyGuard
+{
     // Using Fixed point calculations for these types
     using PRBMathSD59x18 for int256;
     using PRBMathUD60x18 for uint256;
@@ -29,10 +34,12 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     using UniswapV2Helpers for IUniswapV2Router02;
     using SafeERC20 for IERC20Extension;
 
-    IERC20Extension public immutable WETH = IERC20Extension(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    IERC20Extension public immutable WETH =
+        IERC20Extension(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
 
     // The ETH address according to 1inch API, this address is used as the address of the native token on all chains
-    IERC20Extension public immutable ethContract = IERC20Extension(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+    IERC20Extension public immutable ethContract =
+        IERC20Extension(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
 
     // Chainlink feedRegistry
     FeedRegistryInterface public immutable feedRegistry =
@@ -41,7 +48,8 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     IUniswapV2Router02 public immutable uniswapV2Router =
         IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
-    IPermit2 public immutable permit2 = IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
+    IPermit2 public immutable permit2 =
+        IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
 
     IVault public vault;
 
@@ -56,14 +64,18 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     }
 
     /// @dev Allows the admin to update the vault contract
-    function setVault(IVault _vault) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    function setVault(
+        IVault _vault
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         vault = _vault;
 
         emit VaultSet(_vault, msg.sender);
     }
 
     /// @dev Allows the admin to update the paused status of the contract
-    function setContractPaused(bool _pauseContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setContractPaused(
+        bool _pauseContract
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_pauseContract) {
             _pause();
         } else {
@@ -72,7 +84,9 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     }
 
     /// @dev Allows the admin to withdraw any ETH or ERC20 tokens that might've accidentally been locked in the contract
-    function withdrawERC20(IERC20Extension _token) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    function withdrawERC20(
+        IERC20Extension _token
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         if (_token == ethContract) {
             uint256 balance = address(this).balance;
             require(balance > 0, "Nothing to withdraw");
@@ -88,10 +102,12 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     }
 
     /// @dev Allows the admin to update the percentage fee
-    function setFee(uint256 _fee) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-      feePercentage = _fee;
+    function setFee(
+        uint256 _fee
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        feePercentage = _fee;
 
-      emit SetFee(_msgSender(), _fee);
+        emit SetFee(_msgSender(), _fee);
     }
 
     function _handleEthTransferBack(
@@ -101,7 +117,10 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     ) internal returns (uint256 amountReturnedAfterFee) {
         amountReturnedAfterFee = _amountReturned - _feeTotalInETH;
 
-        require(amountReturnedAfterFee > _minimumReturnAmount, "Not enough tokens returned after applying fee");
+        require(
+            amountReturnedAfterFee > _minimumReturnAmount,
+            "Not enough tokens returned after applying fee"
+        );
 
         (bool success, ) = msg.sender.call{value: amountReturnedAfterFee}("");
 
@@ -134,7 +153,11 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
             return amountReturnedAfterFee;
         }
 
-        _handleApprovalFromThisForUniswap(_toToken, ethContract, amountReturnedAfterFee);
+        _handleApprovalFromThisForUniswap(
+            _toToken,
+            ethContract,
+            amountReturnedAfterFee
+        );
 
         (uint256 swappedAmountIn, ) = uniswapV2Router._swapTokensForExactETH(
             _toToken,
@@ -145,7 +168,10 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
 
         amountReturnedAfterFee -= swappedAmountIn;
 
-        require(amountReturnedAfterFee > _minimumReturnAmount, "Not enough tokens returned after charging ERC20 fee");
+        require(
+            amountReturnedAfterFee > _minimumReturnAmount,
+            "Not enough tokens returned after charging ERC20 fee"
+        );
 
         _toToken.safeTransfer(msg.sender, amountReturnedAfterFee);
     }
@@ -157,10 +183,21 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         uint256 _minimumReturnAmount
     ) internal returns (uint256) {
         if (_isEth(_toToken)) {
-            return _handleEthTransferBack(_amountReturned, _feeTotalInETH, _minimumReturnAmount);
+            return
+                _handleEthTransferBack(
+                    _amountReturned,
+                    _feeTotalInETH,
+                    _minimumReturnAmount
+                );
         }
 
-        return _handleERC20TransferBack(_toToken, _amountReturned, _feeTotalInETH, _minimumReturnAmount);
+        return
+            _handleERC20TransferBack(
+                _toToken,
+                _amountReturned,
+                _feeTotalInETH,
+                _minimumReturnAmount
+            );
     }
 
     function _swapFromETH(
@@ -168,7 +205,10 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         SwapParams calldata _swapParams,
         uint256 _gasRefund,
         uint256 _minimumReturnAmount
-    ) internal returns (uint256, uint256 amountReturned, uint256 feeTotalInETH) {
+    )
+        internal
+        returns (uint256, uint256 amountReturned, uint256 feeTotalInETH)
+    {
         require(msg.value >= _swapParams.value, "Not enough ETH provided");
 
         uint256 beforeBalanceToToken = _toToken.balanceOf(address(this));
@@ -179,11 +219,23 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
 
         amountReturned = afterBalanceToToken - beforeBalanceToToken;
 
-        require(amountReturned > _minimumReturnAmount, "Not enough tokens returned");
+        require(
+            amountReturned > _minimumReturnAmount,
+            "Not enough tokens returned"
+        );
 
-        (feeTotalInETH, ) = _calculatePercentageFeeInETH(_toToken, amountReturned, _gasRefund);
+        (feeTotalInETH, ) = _calculatePercentageFeeInETH(
+            _toToken,
+            amountReturned,
+            _gasRefund
+        );
 
-        amountReturned = _handleERC20TransferBack(_toToken, amountReturned, feeTotalInETH, _minimumReturnAmount);
+        amountReturned = _handleERC20TransferBack(
+            _toToken,
+            amountReturned,
+            feeTotalInETH,
+            _minimumReturnAmount
+        );
 
         return (_swapParams.value, amountReturned, feeTotalInETH);
     }
@@ -196,28 +248,57 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         uint256 _gasRefund,
         IPermit2.PermitSingle calldata _permit,
         bytes calldata _signature
-    ) internal returns (uint256, uint256 amountReturned, uint256 feeTotalInETH) {
+    )
+        internal
+        returns (uint256, uint256 amountReturned, uint256 feeTotalInETH)
+    {
         permit2.permit(msg.sender, _permit, _signature);
 
-        permit2.transferFrom(msg.sender, address(this), _swapParams.amount.toUint160(), address(_fromToken));
+        permit2.transferFrom(
+            msg.sender,
+            address(this),
+            _swapParams.amount.toUint160(),
+            address(_fromToken)
+        );
 
-        if (_fromToken.allowance(address(this), _swapParams.to) < _swapParams.amount) {
+        if (
+            _fromToken.allowance(address(this), _swapParams.to) <
+            _swapParams.amount
+        ) {
             _fromToken.safeApprove(_swapParams.to, type(uint256).max);
         }
 
-        uint256 beforeBalanceToToken = returnTokenBalance(_toToken, address(this));
+        uint256 beforeBalanceToToken = returnTokenBalance(
+            _toToken,
+            address(this)
+        );
 
         _tryCall(_swapParams.to, _swapParams.data);
 
-        uint256 afterBalanceToToken = returnTokenBalance(_toToken, address(this));
+        uint256 afterBalanceToToken = returnTokenBalance(
+            _toToken,
+            address(this)
+        );
 
         amountReturned = afterBalanceToToken - beforeBalanceToToken;
 
-        require(amountReturned > _minimumReturnAmount, "Not enough tokens returned");
+        require(
+            amountReturned > _minimumReturnAmount,
+            "Not enough tokens returned"
+        );
 
-        (feeTotalInETH, ) = _calculatePercentageFeeInETH(_toToken, amountReturned, _gasRefund);
+        (feeTotalInETH, ) = _calculatePercentageFeeInETH(
+            _toToken,
+            amountReturned,
+            _gasRefund
+        );
 
-        amountReturned = _handleToTokenTransferBack(_toToken, amountReturned, feeTotalInETH, _minimumReturnAmount);
+        amountReturned = _handleToTokenTransferBack(
+            _toToken,
+            amountReturned,
+            feeTotalInETH,
+            _minimumReturnAmount
+        );
 
         return (_swapParams.amount, amountReturned, feeTotalInETH);
     }
@@ -228,26 +309,54 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         SwapParams calldata _swapParams,
         uint256 _gasRefund,
         uint256 _minimumReturnAmount
-    ) internal returns (uint256, uint256 amountReturned, uint256 feeTotalInETH) {
-        _fromToken.safeTransferFrom(msg.sender, address(this), _swapParams.amount);
+    )
+        internal
+        returns (uint256, uint256 amountReturned, uint256 feeTotalInETH)
+    {
+        _fromToken.safeTransferFrom(
+            msg.sender,
+            address(this),
+            _swapParams.amount
+        );
 
-        if (_fromToken.allowance(address(this), _swapParams.to) < _swapParams.amount) {
+        if (
+            _fromToken.allowance(address(this), _swapParams.to) <
+            _swapParams.amount
+        ) {
             _fromToken.safeApprove(_swapParams.to, type(uint256).max);
         }
 
-        uint256 beforeBalanceToToken = returnTokenBalance(_toToken, address(this));
+        uint256 beforeBalanceToToken = returnTokenBalance(
+            _toToken,
+            address(this)
+        );
 
         _tryCall(_swapParams.to, _swapParams.data);
 
-        uint256 afterBalanceToToken = returnTokenBalance(_toToken, address(this));
+        uint256 afterBalanceToToken = returnTokenBalance(
+            _toToken,
+            address(this)
+        );
 
         amountReturned = afterBalanceToToken - beforeBalanceToToken;
 
-        require(amountReturned > _minimumReturnAmount, "Not enough tokens returned");
+        require(
+            amountReturned > _minimumReturnAmount,
+            "Not enough tokens returned"
+        );
 
-        (feeTotalInETH, ) = _calculatePercentageFeeInETH(_toToken, amountReturned, _gasRefund);
+        (feeTotalInETH, ) = _calculatePercentageFeeInETH(
+            _toToken,
+            amountReturned,
+            _gasRefund
+        );
 
-        amountReturned = _handleToTokenTransferBack(_toToken, amountReturned, feeTotalInETH, _minimumReturnAmount);
+        amountReturned = _handleToTokenTransferBack(
+            _toToken,
+            amountReturned,
+            feeTotalInETH,
+            _minimumReturnAmount
+        );
 
         return (_swapParams.amount, amountReturned, feeTotalInETH);
     }
@@ -258,12 +367,32 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         SwapParams calldata _swapParams,
         uint256 _gasRefund,
         uint256 _minimumReturnAmount
-    ) internal returns (uint256 amountRequested, uint256 amountReturned, uint256 feeTotalInETH) {
+    )
+        internal
+        returns (
+            uint256 amountRequested,
+            uint256 amountReturned,
+            uint256 feeTotalInETH
+        )
+    {
         if (_isEth(_fromToken)) {
-            return _swapFromETH(_toToken, _swapParams, _gasRefund, _minimumReturnAmount);
+            return
+                _swapFromETH(
+                    _toToken,
+                    _swapParams,
+                    _gasRefund,
+                    _minimumReturnAmount
+                );
         }
 
-        return _swapFromERC20(_fromToken, _toToken, _swapParams, _gasRefund, _minimumReturnAmount);
+        return
+            _swapFromERC20(
+                _fromToken,
+                _toToken,
+                _swapParams,
+                _gasRefund,
+                _minimumReturnAmount
+            );
     }
 
     function _swapTokens(
@@ -274,7 +403,14 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         uint256 _gasRefund,
         IPermit2.PermitSingle calldata _permit,
         bytes calldata _signature
-    ) internal returns (uint256 amountRequested, uint256 amountReturned, uint256 feeTotalInETH) {
+    )
+        internal
+        returns (
+            uint256 amountRequested,
+            uint256 amountReturned,
+            uint256 feeTotalInETH
+        )
+    {
         if (_isEth(_fromToken)) {
             revert NativePermitNotAllowed();
         }
@@ -297,7 +433,9 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     }
 
     /// @dev Simplifies the logic of getting decimals for a given token. This function will revert if the given token doesn't have the decimals function, but it seems like a safe assumption that valid tokens will
-    function _getDecimals(IERC20Extension _token) internal view returns (uint8 decimals) {
+    function _getDecimals(
+        IERC20Extension _token
+    ) internal view returns (uint8 decimals) {
         if (_token == ethContract) {
             return 18;
         }
@@ -305,7 +443,10 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         return _token.decimals();
     }
 
-    function returnTokenBalance(IERC20Extension _token, address _address) internal view returns (uint256) {
+    function returnTokenBalance(
+        IERC20Extension _token,
+        address _address
+    ) internal view returns (uint256) {
         if (!_isEth(_token)) {
             return _token.balanceOf(_address);
         }
@@ -314,7 +455,10 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     }
 
     /// @dev A wrapper around the chainlink rate fetching to prevent reverts in the case of missing exchange rates.
-    function tryGetChainlinkRate(IERC20 _fromToken, IERC20 _toToken) internal view returns (uint256) {
+    function tryGetChainlinkRate(
+        IERC20 _fromToken,
+        IERC20 _toToken
+    ) internal view returns (uint256) {
         // Because of how chainlink rates work, they never provide rates from ETH -> _toToken, they always go _fromToken -> ETH. So the rate needs to be inverted if the request is in the wrong direction
         bool invertRate = _fromToken == ethContract;
 
@@ -323,7 +467,9 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
             _toToken = ethContract;
         }
 
-        try feedRegistry.latestRoundData(address(_fromToken), address(_toToken)) returns (
+        try
+            feedRegistry.latestRoundData(address(_fromToken), address(_toToken))
+        returns (
             uint80 roundId,
             int256 chainlinkPrice,
             uint256,
@@ -351,10 +497,14 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     ) internal pure returns (uint256) {
         // Scale the price up if there isn't enough decimals
         if (_inputDecimals < _outputDecimals) {
-            return _amount * uint256(10 ** uint256(_outputDecimals - _inputDecimals));
+            return
+                _amount *
+                uint256(10 ** uint256(_outputDecimals - _inputDecimals));
             // Similarly scale the price down if there are too many decimals
         } else if (_inputDecimals > _outputDecimals) {
-            return _amount / uint256(10 ** uint256(_inputDecimals - _outputDecimals));
+            return
+                _amount /
+                uint256(10 ** uint256(_inputDecimals - _outputDecimals));
         }
 
         // Otherwise if the same decimals return
@@ -410,7 +560,10 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         return 0;
     }
 
-    function _getUniswapV2Rate(IERC20Extension _fromToken, IERC20Extension _toToken) internal view returns (uint256) {
+    function _getUniswapV2Rate(
+        IERC20Extension _fromToken,
+        IERC20Extension _toToken
+    ) internal view returns (uint256) {
         // Uniswap doesn't handle the ETH contract (0xeee), so update to WETH address for rate fetching
         if (_fromToken == ethContract) {
             _fromToken = WETH;
@@ -421,7 +574,10 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         }
 
         // The rate fetching path
-        address[] memory path = UniswapV2Helpers._returnUniswapV2Path(_fromToken, _toToken);
+        address[] memory path = UniswapV2Helpers._returnUniswapV2Path(
+            _fromToken,
+            _toToken
+        );
 
         // The return path function will return an array of 0x0 addresses if it can't find a valid path
         if (path.length == 0) return 0;
@@ -433,16 +589,24 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         uint256 amountIn = 1 * 10 ** inputDecimals;
 
         // Safely call the method
-        try uniswapV2Router.getAmountsOut(amountIn, path) returns (uint256[] memory rate) {
+        try uniswapV2Router.getAmountsOut(amountIn, path) returns (
+            uint256[] memory rate
+        ) {
             return rate[path.length - 1];
         } catch {
             return 0;
         }
     }
 
-    function _getExchangeRate(IERC20Extension _fromToken, IERC20Extension _toToken) internal view returns (uint256) {
+    function _getExchangeRate(
+        IERC20Extension _fromToken,
+        IERC20Extension _toToken
+    ) internal view returns (uint256) {
         // If both tokens are either ETH or WETH, then return 1 ether as they are equivalent in value
-        if ((_isEth(_fromToken) || _fromToken == WETH) && (_isEth(_toToken) || _toToken == WETH)) {
+        if (
+            (_isEth(_fromToken) || _fromToken == WETH) &&
+            (_isEth(_toToken) || _toToken == WETH)
+        ) {
             return 1 ether;
         }
 
@@ -472,16 +636,29 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         uint8 tokenDecimals = _getDecimals(_token);
 
         // To calculate the correct value here we must scale the value, either up or down depending on the decimals in _fromToken
-        uint256 amountInETH = _scaleAmountFromDecimals(_amount.mul(exchangeRateToETH), tokenDecimals, 18);
+        uint256 amountInETH = _scaleAmountFromDecimals(
+            _amount.mul(exchangeRateToETH),
+            tokenDecimals,
+            18
+        );
 
-        require(amountInETH > _gasRefund, "Not swapping enough to recover the gas refund");
+        require(
+            amountInETH > _gasRefund,
+            "Not swapping enough to recover the gas refund"
+        );
 
         // Deducting _gasRefund from the amountInETH, because the _gasRefund is already being added on-top of the percentageFeeInETH and we don't want to double-charge
-        uint256 percentageFeeInETH = (amountInETH - _gasRefund).mul(feePercentage);
+        uint256 percentageFeeInETH = (amountInETH - _gasRefund).mul(
+            feePercentage
+        );
 
         feeTotalInETH = percentageFeeInETH + _gasRefund;
 
-        uint256 scaledFeeTotalFromToken = _scaleAmountFromDecimals(feeTotalInETH, 18, tokenDecimals);
+        uint256 scaledFeeTotalFromToken = _scaleAmountFromDecimals(
+            feeTotalInETH,
+            18,
+            tokenDecimals
+        );
         uint256 scaledExchangeRate = uint256(1 ether).div(exchangeRateToETH);
 
         feeTotalInToken = scaledFeeTotalFromToken.mul(scaledExchangeRate);
@@ -491,8 +668,15 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
     /// @param _token The token to do unlimited approvals for
     /// @param _token The token to handle approvals for
     /// @param _amount The amount to validate the approval balance for
-    function _handleApprovalFromThis(IERC20Extension _token, address _spender, uint256 _amount) internal {
-        if (_isEth(_token) || _token.allowance(address(this), _spender) >= _amount) {
+    function _handleApprovalFromThis(
+        IERC20Extension _token,
+        address _spender,
+        uint256 _amount
+    ) internal {
+        if (
+            _isEth(_token) ||
+            _token.allowance(address(this), _spender) >= _amount
+        ) {
             return;
         }
 
@@ -511,7 +695,11 @@ abstract contract BaseSwapProxy is IBaseSwapProxy, AccessControlEnumerable, Paus
         if (_fromToken == WETH && _toToken == ethContract) {
             _handleApprovalFromThis(_fromToken, address(WETH), _amount);
         } else {
-            _handleApprovalFromThis(_fromToken, address(uniswapV2Router), _amount);
+            _handleApprovalFromThis(
+                _fromToken,
+                address(uniswapV2Router),
+                _amount
+            );
         }
     }
 }

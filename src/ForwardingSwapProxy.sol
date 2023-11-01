@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 
 import "prb-math/contracts/PRBMathSD59x18.sol";
 import "prb-math/contracts/PRBMathUD60x18.sol";
@@ -17,17 +16,25 @@ import "./BaseSwapProxy.sol";
 import "./Whitelist.sol";
 
 /// @title ForwardingSwapProxy
-contract ForwardingSwapProxy is AccessControlEnumerable, Pausable, ReentrancyGuard, BaseSwapProxy, Whitelist {
+contract ForwardingSwapProxy is
+    AccessControlEnumerable,
+    Pausable,
+    ReentrancyGuard,
+    BaseSwapProxy,
+    Whitelist
+{
     // Using Fixed point calculations for these types
     using PRBMathSD59x18 for int256;
     using PRBMathUD60x18 for uint256;
     using SafeERC20 for IERC20Extension;
 
-    using UniswapV2Helpers for IUniswapV2Router02;
-
     constructor(address _admin) BaseSwapProxy(_admin) Whitelist(_admin) {}
 
-    function _validateSwap(IERC20Extension _fromToken, IERC20Extension _toToken, address _swapContract) internal view {
+    function _validateSwap(
+        IERC20Extension _fromToken,
+        IERC20Extension _toToken,
+        address _swapContract
+    ) internal view {
         require(_fromToken != _toToken, "_fromToken equal to _toToken");
         require(isWhitelisted(_swapContract), "Not whitelisted");
     }
@@ -61,15 +68,25 @@ contract ForwardingSwapProxy is AccessControlEnumerable, Pausable, ReentrancyGua
     ) external payable override whenNotPaused nonReentrant {
         _validateSwap(_fromToken, _toToken, _swapParams.to);
 
-        (uint256 amountRequested, uint256 amountReturned, uint256 feeTotalInETH) = _swapTokens(
+        (
+            uint256 amountRequested,
+            uint256 amountReturned,
+            uint256 feeTotalInETH
+        ) = _swapTokens(
+                _fromToken,
+                _toToken,
+                _swapParams,
+                _gasRefund,
+                _minimumReturnAmount
+            );
+
+        _handleSwapCompletion(
             _fromToken,
             _toToken,
-            _swapParams,
-            _gasRefund,
-            _minimumReturnAmount
+            amountRequested,
+            amountReturned,
+            feeTotalInETH
         );
-
-        _handleSwapCompletion(_fromToken, _toToken, amountRequested, amountReturned, feeTotalInETH);
     }
 
     function proxySwapWithPermit(
@@ -83,20 +100,33 @@ contract ForwardingSwapProxy is AccessControlEnumerable, Pausable, ReentrancyGua
     ) external override whenNotPaused nonReentrant {
         _validateSwap(_fromToken, _toToken, _swapParams.to);
 
-        (uint256 amountRequested, uint256 amountReturned, uint256 feeTotalInETH) = _swapTokens(
+        (
+            uint256 amountRequested,
+            uint256 amountReturned,
+            uint256 feeTotalInETH
+        ) = _swapTokens(
+                _fromToken,
+                _toToken,
+                _swapParams,
+                _gasRefund,
+                _minimumReturnAmount,
+                _permit,
+                _signature
+            );
+
+        _handleSwapCompletion(
             _fromToken,
             _toToken,
-            _swapParams,
-            _gasRefund,
-            _minimumReturnAmount,
-            _permit,
-            _signature
+            amountRequested,
+            amountReturned,
+            feeTotalInETH
         );
-
-        _handleSwapCompletion(_fromToken, _toToken, amountRequested, amountReturned, feeTotalInETH);
     }
 
-    function getExchangeRate(IERC20Extension _fromToken, IERC20Extension _toToken) external view returns (uint256) {
+    function getExchangeRate(
+        IERC20Extension _fromToken,
+        IERC20Extension _toToken
+    ) external view returns (uint256) {
         return _getExchangeRate(_fromToken, _toToken);
     }
 
@@ -118,7 +148,12 @@ contract ForwardingSwapProxy is AccessControlEnumerable, Pausable, ReentrancyGua
         IERC20Extension _token,
         uint256 _amount,
         uint256 _gasRefund
-    ) external view override returns (uint256 feeTotalInETH, uint256 feeTotalInToken) {
+    )
+        external
+        view
+        override
+        returns (uint256 feeTotalInETH, uint256 feeTotalInToken)
+    {
         return _calculatePercentageFeeInETH(_token, _amount, _gasRefund);
     }
 
@@ -127,6 +162,7 @@ contract ForwardingSwapProxy is AccessControlEnumerable, Pausable, ReentrancyGua
         uint8 _inputDecimals,
         uint8 _outputDecimals
     ) external pure returns (uint256) {
-        return _scaleAmountFromDecimals(_amount, _inputDecimals, _outputDecimals);
+        return
+            _scaleAmountFromDecimals(_amount, _inputDecimals, _outputDecimals);
     }
 }

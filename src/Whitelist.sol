@@ -1,4 +1,4 @@
-import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
+import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "./interfaces/IWhitelist.sol";
@@ -7,7 +7,7 @@ contract Whitelist is IWhitelist, AccessControlEnumerable {
     mapping(address => bool) whitelist;
 
     constructor(address _admin) {
-        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
     function isWhitelisted(address _address)
