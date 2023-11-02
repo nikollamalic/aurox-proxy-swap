@@ -14,20 +14,14 @@ library UniswapV3Helper {
         IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
 
     ISwapRouter public constant swapRouter =
-        IRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
 
     function getQuote(
         address _tokenIn,
         address _tokenOut,
         uint256 _amountIn
-    ) external returns (uint256 quote) {
-        require('amountIn > 0', 'amountIn must be greater than 0');
-
-        address pool = poolFactory.getPool(_tokenIn, _tokenOut, 3000);
-
-        if (pool == address(0)) {
-            return 0;
-        }
+    ) internal returns (uint256 quote) {
+        require(_amountIn > 0, "amountIn must be greater than 0");
 
         try
             quoter.quoteExactInputSingle(
@@ -38,7 +32,7 @@ library UniswapV3Helper {
                 0
             )
         returns (uint256 amountOut) {
-            return amountOut / amountIn;
+            return amountOut / _amountIn;
         } catch {
             return 0;
         }
@@ -49,7 +43,7 @@ library UniswapV3Helper {
         address _tokenOut,
         uint256 _amountIn,
         uint256 _amountOutMinimum
-    ) external returns (uint256 amountOut) {
+    ) internal returns (uint256) {
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
                 tokenIn: _tokenIn,

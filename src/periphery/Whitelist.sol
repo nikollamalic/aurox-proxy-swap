@@ -1,7 +1,7 @@
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import "./interfaces/IWhitelist.sol";
+import "@aurox/interfaces/IWhitelist.sol";
 
 contract Whitelist is IWhitelist, AccessControlEnumerable {
     mapping(address => bool) whitelist;

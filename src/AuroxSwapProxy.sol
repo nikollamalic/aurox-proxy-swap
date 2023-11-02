@@ -8,11 +8,14 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./interfaces/IERC20Extension.sol";
 
-import "./BaseSwapProxy.sol";
-import "./Whitelist.sol";
+import "@aurox/Base.sol";
+import "@aurox/periphery/Whitelist.sol";
+
+import "forge-std/console.sol";
 
 /// @title ForwardingSwapProxy
-contract ForwardingSwapProxy is
+contract AuroxSwapProxy is
+    IAuroxSwapProxy,
     AccessControlEnumerable,
     Pausable,
     ReentrancyGuard,
@@ -27,7 +30,12 @@ contract ForwardingSwapProxy is
         address _swapContract
     ) internal view {
         require(_fromToken != _toToken, "_fromToken equal to _toToken");
-        require(isWhitelisted(_swapContract), "Not whitelisted");
+
+        console.log("Swap contract", _swapContract);
+
+        if (!isWhitelisted(_swapContract)) {
+            revert NotWhitelisted(_swapContract);
+        }
     }
 
     function _handleSwapCompletion(
@@ -41,7 +49,7 @@ contract ForwardingSwapProxy is
             vault.paidFees{value: _feeTotalInETH}(msg.sender, _feeTotalInETH);
         }
 
-        emit ProxySwapWithFee(
+        emit AuroxSwap(
             address(_fromToken),
             address(_toToken),
             _amountRequested,
@@ -50,7 +58,7 @@ contract ForwardingSwapProxy is
         );
     }
 
-    function proxySwapWithFee(
+    function swapWithFee(
         IERC20Extension _fromToken,
         IERC20Extension _toToken,
         SwapParams calldata _swapParams,
@@ -80,7 +88,7 @@ contract ForwardingSwapProxy is
         );
     }
 
-    function proxySwapWithPermit(
+    function swapWithPermit(
         IERC20Extension _fromToken,
         IERC20Extension _toToken,
         SwapParams calldata _swapParams,
@@ -117,22 +125,8 @@ contract ForwardingSwapProxy is
     function getExchangeRate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) external view returns (uint256) {
+    ) external returns (uint256) {
         return _getExchangeRate(_fromToken, _toToken);
-    }
-
-    function getChainlinkRate(
-        IERC20Extension _fromToken,
-        IERC20Extension _toToken
-    ) external view override returns (uint256 exchangeRate) {
-        return _getChainlinkRate(_fromToken, _toToken);
-    }
-
-    function getUniswapV3Rate(
-        IERC20Extension _fromToken,
-        IERC20Extension _toToken
-    ) external view override returns (uint256) {
-        return _getUniswapV3Rate(_fromToken, _toToken);
     }
 
     function calculatePercentageFeeInETH(
@@ -141,19 +135,9 @@ contract ForwardingSwapProxy is
         uint256 _gasRefund
     )
         external
-        view
         override
         returns (uint256 feeTotalInETH, uint256 feeTotalInToken)
     {
         return _calculatePercentageFeeInETH(_token, _amount, _gasRefund);
-    }
-
-    function scaleAmountFromDecimals(
-        uint256 _amount,
-        uint8 _inputDecimals,
-        uint8 _outputDecimals
-    ) external pure returns (uint256) {
-        return
-            _scaleAmountFromDecimals(_amount, _inputDecimals, _outputDecimals);
     }
 }

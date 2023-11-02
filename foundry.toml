@@ -3,8 +3,12 @@ src = "src"
 out = "out"
 libs = ["lib"]
 
+auto_detect_solc = true
+
 remappings = [
-    "@prb/math/=lib/prb-math/src/",
+  "@prb/math/=lib/prb-math/src/",
+  "@uniswap/v3-core/=lib/v3-core/",
+  "@aurox/=src/"
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

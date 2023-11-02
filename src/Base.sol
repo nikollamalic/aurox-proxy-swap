@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity 0.8.20;
 
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
@@ -17,24 +17,23 @@ import "./libraries/SafeCast160.sol";
 import "./libraries/UniswapV3Helper.sol";
 
 import "./interfaces/IERC20Extension.sol";
-import "./interfaces/IBaseSwapProxy.sol";
+import "./interfaces/IAuroxSwapProxy.sol";
 import "./interfaces/IVault.sol";
 import "./interfaces/IFeedRegistry.sol";
 
+import "forge-std/console.sol";
+
 /// @title BaseSwapProxy
 abstract contract BaseSwapProxy is
-    IBaseSwapProxy,
+    IAuroxSwapProxy,
     AccessControlEnumerable,
     Pausable,
     ReentrancyGuard
 {
-    UniswapV3Helper uniswapV3Helper;
+    using SafeERC20 for IERC20Extension;
 
     // Using Fixed point calculations for these types
-    using SD59x18 for int256;
-    using UD60x18 for uint256;
     using SafeCast160 for uint256;
-    using SafeERC20 for IERC20Extension;
 
     IERC20Extension public immutable WETH =
         IERC20Extension(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
@@ -54,7 +53,7 @@ abstract contract BaseSwapProxy is
         IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
 
     IQuoter public immutable quoter =
-        IQouter(0xb27308f9f90d607463bb33ea1bebb41c27ce5ab6);
+        IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
 
     IVault public vault;
 
@@ -164,9 +163,9 @@ abstract contract BaseSwapProxy is
             amountReturnedAfterFee
         );
 
-        uint256 amountOut = uniswapV3Helper.exactInputSingle(
-            _toToken,
-            WETH,
+        uint256 amountOut = UniswapV3Helper.exactInputSingle(
+            address(_toToken),
+            address(WETH),
             amountReturnedAfterFee,
             0
         );
@@ -270,7 +269,7 @@ abstract contract BaseSwapProxy is
             _fromToken.allowance(address(this), _swapParams.to) <
             _swapParams.amount
         ) {
-            _fromToken.safeApprove(_swapParams.to, type(uint256).max);
+            _fromToken.safeIncreaseAllowance(_swapParams.to, type(uint256).max);
         }
 
         uint256 beforeBalanceToToken = returnTokenBalance(
@@ -318,6 +317,8 @@ abstract contract BaseSwapProxy is
         internal
         returns (uint256, uint256 amountReturned, uint256 feeTotalInETH)
     {
+        console.log("swapFromERC20");
+
         _fromToken.safeTransferFrom(
             msg.sender,
             address(this),
@@ -328,7 +329,7 @@ abstract contract BaseSwapProxy is
             _fromToken.allowance(address(this), _swapParams.to) <
             _swapParams.amount
         ) {
-            _fromToken.safeApprove(_swapParams.to, type(uint256).max);
+            _fromToken.safeIncreaseAllowance(_swapParams.to, type(uint256).max);
         }
 
         uint256 beforeBalanceToToken = returnTokenBalance(
@@ -485,7 +486,7 @@ abstract contract BaseSwapProxy is
             require(updatedAt > 0 && answeredInRound == roundId);
             // Un-invert the returned rate
             if (invertRate) {
-                return uint256(1 ether).div(uint256(chainlinkPrice));
+                return uint256(1 ether / chainlinkPrice);
             }
 
             return uint256(chainlinkPrice);
@@ -558,7 +559,7 @@ abstract contract BaseSwapProxy is
 
         // If both rates returned, calculate the ratio between the two, then scale it to the correct decimals
         if (toETHRate != 0 && fromETHRate != 0) {
-            uint256 derivedRate = toETHRate.mul(fromETHRate);
+            uint256 derivedRate = toETHRate * fromETHRate;
             return _scaleAmountFromTokenDecimals(_toToken, derivedRate, 18);
         }
 
@@ -568,7 +569,7 @@ abstract contract BaseSwapProxy is
     function _getUniswapV3Rate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) internal view returns (uint256) {
+    ) internal returns (uint256) {
         // Uniswap doesn't handle the ETH contract (0xeee), so update to WETH address for rate fetching
         if (_fromToken == ethContract) {
             _fromToken = WETH;
@@ -580,13 +581,18 @@ abstract contract BaseSwapProxy is
 
         uint256 amountIn = 1 * 10 ** _getDecimals(_fromToken);
 
-        return uniswapV3Helper.getQuote(_fromToken, _toToken, amountIn);
+        return
+            UniswapV3Helper.getQuote(
+                address(_fromToken),
+                address(_toToken),
+                amountIn
+            );
     }
 
     function _getExchangeRate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) internal view returns (uint256) {
+    ) internal returns (uint256) {
         // If both tokens are either ETH or WETH, then return 1 ether as they are equivalent in value
         if (
             (_isEth(_fromToken) || _fromToken == WETH) &&
@@ -610,7 +616,7 @@ abstract contract BaseSwapProxy is
         IERC20Extension _token,
         uint256 _amount,
         uint256 _gasRefund
-    ) internal view returns (uint256 feeTotalInETH, uint256 feeTotalInToken) {
+    ) internal returns (uint256 feeTotalInETH, uint256 feeTotalInToken) {
         if (_gasRefund == 0 && feePercentage == 0) {
             return (0, 0);
         }
@@ -621,7 +627,7 @@ abstract contract BaseSwapProxy is
 
         // To calculate the correct value here we must scale the value, either up or down depending on the decimals in _fromToken
         uint256 amountInETH = _scaleAmountFromDecimals(
-            _amount.mul(exchangeRateToETH),
+            _amount * exchangeRateToETH,
             tokenDecimals,
             18
         );
@@ -632,9 +638,7 @@ abstract contract BaseSwapProxy is
         );
 
         // Deducting _gasRefund from the amountInETH, because the _gasRefund is already being added on-top of the percentageFeeInETH and we don't want to double-charge
-        uint256 percentageFeeInETH = (amountInETH - _gasRefund).mul(
-            feePercentage
-        );
+        uint256 percentageFeeInETH = (amountInETH - _gasRefund) * feePercentage;
 
         feeTotalInETH = percentageFeeInETH + _gasRefund;
 
@@ -643,9 +647,9 @@ abstract contract BaseSwapProxy is
             18,
             tokenDecimals
         );
-        uint256 scaledExchangeRate = uint256(1 ether).div(exchangeRateToETH);
+        uint256 scaledExchangeRate = uint256(1 ether) / (exchangeRateToETH);
 
-        feeTotalInToken = scaledFeeTotalFromToken.mul(scaledExchangeRate);
+        feeTotalInToken = scaledFeeTotalFromToken * scaledExchangeRate;
     }
 
     /// @notice This method simplifies handling approvals, it also contains logic to detect if the approval balance is greater than the supplied amount (in-case of tokens that decrement the approval balance when the balance is MAX uint256)
@@ -664,7 +668,7 @@ abstract contract BaseSwapProxy is
             return;
         }
 
-        _token.safeApprove(_spender, type(uint256).max);
+        _token.safeIncreaseAllowance(_spender, type(uint256).max);
     }
 
     /// @notice This method is targeted at handling approvals when swapping through Uniswap.

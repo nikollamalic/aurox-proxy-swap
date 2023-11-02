@@ -1,6 +1,6 @@
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 
-import "./interfaces/IVault.sol";
+import "@aurox/interfaces/IVault.sol";
 
 /// @title Vault
 /// @dev This contract will be used to hold fee revenue, it also provides some helper function to top-up registered HOT_WALLETS

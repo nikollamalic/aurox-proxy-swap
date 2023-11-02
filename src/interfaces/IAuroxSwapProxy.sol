@@ -3,7 +3,7 @@ import "./IERC20Extension.sol";
 
 import "./IPermit2.sol";
 
-interface IBaseSwapProxy {
+interface IAuroxSwapProxy {
     /// @dev Event used when an admin updates the feePercentage
     event SetFee(address indexed from, uint256 fee);
     /// @dev Event emitted when permit2 is set
@@ -11,7 +11,7 @@ interface IBaseSwapProxy {
     /// @dev Event used when an admin updates the vault contract
     event VaultSet(IVault vault, address indexed setter);
     /// @dev Event used whenever a user executes a proxy swap through the contract
-    event ProxySwapWithFee(
+    event AuroxSwap(
         address indexed _fromToken,
         address indexed _toToken,
         uint256 amountIn,
@@ -20,6 +20,7 @@ interface IBaseSwapProxy {
     );
 
     error NativePermitNotAllowed();
+    error NotWhitelisted(address);
 
     /// @notice Struct containing the required fields to forward a swap transaction
     /// @param to The address of where to execute the proxy swap
@@ -33,7 +34,7 @@ interface IBaseSwapProxy {
         bytes data;
     }
 
-    function proxySwapWithPermit(
+    function swapWithPermit(
         IERC20Extension _fromToken,
         IERC20Extension _toToken,
         SwapParams calldata _swapParams,
@@ -49,7 +50,7 @@ interface IBaseSwapProxy {
     /// @param _swapParams The required fields to execute the proxy swap
     /// @param _gasRefund The amount in ETH to refund Aurox for proxying the swap
     /// @param _minimumReturnAmount The minimum amount of _toToken's to receive for the swap. This is the final return amount for the user, after the fee has been deducted
-    function proxySwapWithFee(
+    function swapWithFee(
         IERC20Extension _fromToken,
         IERC20Extension _toToken,
         SwapParams calldata _swapParams,
@@ -65,27 +66,7 @@ interface IBaseSwapProxy {
     function getExchangeRate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) external view returns (uint256);
-
-    /// @notice This function tries to calculate the exchange rate between the two tokens using chainlink
-    /// @dev This function returns 0 if no rate can be found
-    /// @param _fromToken The token the user is swapping with
-    /// @param _toToken The token the user wwants
-    /// @return exchangeRate The exchange rate or 0 if no rate is found
-    function getChainlinkRate(
-        IERC20Extension _fromToken,
-        IERC20Extension _toToken
-    ) external view returns (uint256 exchangeRate);
-
-    /// @notice This function tries to find a rate using Uniswap V3.
-    /// It gets the spot ratio between _fromToken and _toToken.
-    /// @param _fromToken The token the user is swapping with
-    /// @param _toToken The token the user wwants
-    /// @return exchangeRate The exchange rate or 0 if no rate is found
-    function getUniswapV3Rate(
-        IERC20Extension _fromToken,
-        IERC20Extension _toToken
-    ) external view returns (uint256);
+    ) external returns (uint256);
 
     /// @notice This function calculates the percentage fee amount in ETH for the _fromToken the user is swapping from. It is deducts the _gasRefund value to ensure the user is charged correctly
     /// @param _fromToken The token the user is swapping from
@@ -97,8 +78,5 @@ interface IBaseSwapProxy {
         IERC20Extension _fromToken,
         uint256 _amount,
         uint256 _gasRefund
-    )
-        external
-        view
-        returns (uint256 feeTotalInETH, uint256 feeTotalInFromToken);
+    ) external returns (uint256 feeTotalInETH, uint256 feeTotalInFromToken);
 }
