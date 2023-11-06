@@ -6,15 +6,13 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "v3-periphery/interfaces/ISwapRouter.sol";
-import "v3-periphery/interfaces/IQuoter.sol";
-import "v3-periphery/libraries/PoolAddress.sol";
-
 import {SD59x18} from "@prb/math/SD59x18.sol";
 import {UD60x18} from "@prb/math/UD60x18.sol";
 
 import "./libraries/SafeCast160.sol";
-import "./libraries/UniswapV3Helper.sol";
+import "./libraries/UniswapV2Helper.sol";
+import "./libraries/DecimalScaler.sol";
+import "./libraries/Constants.sol";
 
 import "./interfaces/IERC20Extension.sol";
 import "./interfaces/IAuroxSwapProxy.sol";
@@ -32,28 +30,25 @@ abstract contract BaseSwapProxy is
 {
     using SafeERC20 for IERC20Extension;
 
-    // Using Fixed point calculations for these types
     using SafeCast160 for uint256;
+    using DecimalScaler for uint256;
+    using UniswapV2Helpers for IUniswapV2Router02;
 
-    IERC20Extension public immutable WETH =
-        IERC20Extension(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    IERC20Extension public immutable WETH = IERC20Extension(Constants.WETH);
 
     // The ETH address according to 1inch API, this address is used as the address of the native token on all chains
     IERC20Extension public immutable ethContract =
-        IERC20Extension(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+        IERC20Extension(Constants.ETH);
 
     // Chainlink feedRegistry
     IFeedRegistry public immutable feedRegistry =
         IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf);
 
-    ISwapRouter public immutable uniswapV3Router =
-        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
-
     IPermit2 public immutable permit2 =
         IPermit2(0x000000000022D473030F116dDEE9F6B43aC78BA3);
 
-    IQuoter public immutable quoter =
-        IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
+    IUniswapV2Router02 public immutable uniswapV2Router =
+        IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
     IVault public vault;
 
@@ -163,14 +158,14 @@ abstract contract BaseSwapProxy is
             amountReturnedAfterFee
         );
 
-        uint256 amountOut = UniswapV3Helper.exactInputSingle(
-            address(_toToken),
-            address(WETH),
+        (uint256 swappedAmountIn, ) = uniswapV2Router._swapTokensForExactETH(
+            _toToken,
+            _feeTotalInETH,
             amountReturnedAfterFee,
-            0
+            address(this)
         );
 
-        amountReturnedAfterFee -= amountOut;
+        amountReturnedAfterFee -= swappedAmountIn;
 
         require(
             amountReturnedAfterFee > _minimumReturnAmount,
@@ -317,8 +312,6 @@ abstract contract BaseSwapProxy is
         internal
         returns (uint256, uint256 amountReturned, uint256 feeTotalInETH)
     {
-        console.log("swapFromERC20");
-
         _fromToken.safeTransferFrom(
             msg.sender,
             address(this),
@@ -495,28 +488,6 @@ abstract contract BaseSwapProxy is
         }
     }
 
-    /// @dev This function scales the _amount up or down depending on the difference between the _inputDecimals and _outputDecimals
-    function _scaleAmountFromDecimals(
-        uint256 _amount,
-        uint8 _inputDecimals,
-        uint8 _outputDecimals
-    ) internal pure returns (uint256) {
-        // Scale the price up if there isn't enough decimals
-        if (_inputDecimals < _outputDecimals) {
-            return
-                _amount *
-                uint256(10 ** uint256(_outputDecimals - _inputDecimals));
-            // Similarly scale the price down if there are too many decimals
-        } else if (_inputDecimals > _outputDecimals) {
-            return
-                _amount /
-                uint256(10 ** uint256(_inputDecimals - _outputDecimals));
-        }
-
-        // Otherwise if the same decimals return
-        return _amount;
-    }
-
     /// @dev Function simply gets the decimals for the provided _token parameter and then scales the _amount accordingly
     function _scaleAmountFromTokenDecimals(
         IERC20Extension _token,
@@ -525,7 +496,7 @@ abstract contract BaseSwapProxy is
     ) internal view returns (uint256 amount) {
         uint8 decimals = _getDecimals(_token);
 
-        return _scaleAmountFromDecimals(_amount, _inputDecimals, decimals);
+        return _amount.scale(_inputDecimals, decimals);
     }
 
     function _getChainlinkRate(
@@ -536,6 +507,7 @@ abstract contract BaseSwapProxy is
         if (_fromToken == WETH) {
             _fromToken = ethContract;
         }
+
         if (_toToken == WETH) {
             _toToken = ethContract;
         }
@@ -566,10 +538,10 @@ abstract contract BaseSwapProxy is
         return 0;
     }
 
-    function _getUniswapV3Rate(
+    function _getUniswapV2Rate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) internal returns (uint256) {
+    ) internal view returns (uint256) {
         // Uniswap doesn't handle the ETH contract (0xeee), so update to WETH address for rate fetching
         if (_fromToken == ethContract) {
             _fromToken = WETH;
@@ -579,20 +551,35 @@ abstract contract BaseSwapProxy is
             _toToken = WETH;
         }
 
-        uint256 amountIn = 1 * 10 ** _getDecimals(_fromToken);
+        // The rate fetching path
+        address[] memory path = UniswapV2Helpers._returnUniswapV2Path(
+            _fromToken,
+            _toToken
+        );
 
-        return
-            UniswapV3Helper.getQuote(
-                address(_fromToken),
-                address(_toToken),
-                amountIn
-            );
+        // The return path function will return an array of 0x0 addresses if it can't find a valid path
+        if (path.length == 0) return 0;
+
+        // To calculate the amount we need to provide an amountIn. This needs to be normalised based on the amount of decimals in the given _fromToken.
+        uint8 inputDecimals = _getDecimals(_fromToken);
+
+        // Apply the decimals to the amount
+        uint256 amountIn = 1 * 10 ** inputDecimals;
+
+        // Safely call the method
+        try uniswapV2Router.getAmountsOut(amountIn, path) returns (
+            uint256[] memory rate
+        ) {
+            return rate[path.length - 1];
+        } catch {
+            return 0;
+        }
     }
 
     function _getExchangeRate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) internal returns (uint256) {
+    ) internal view returns (uint256) {
         // If both tokens are either ETH or WETH, then return 1 ether as they are equivalent in value
         if (
             (_isEth(_fromToken) || _fromToken == WETH) &&
@@ -605,13 +592,10 @@ abstract contract BaseSwapProxy is
 
         if (chainlinkRate != 0) return chainlinkRate;
 
-        uint256 uniswapRate = _getUniswapV3Rate(_fromToken, _toToken);
-
-        if (uniswapRate != 0) return uniswapRate;
-
-                // Fallback to uniswap V2 if needed
+        // Fallback to uniswap V2 if needed
         uint256 uniswapV2Rate = _getUniswapV2Rate(_fromToken, _toToken);
 
+        if (uniswapV2Rate != 0) return uniswapV2Rate;
 
         revert("No Rate Found");
     }
@@ -620,7 +604,7 @@ abstract contract BaseSwapProxy is
         IERC20Extension _token,
         uint256 _amount,
         uint256 _gasRefund
-    ) internal returns (uint256 feeTotalInETH, uint256 feeTotalInToken) {
+    ) internal view returns (uint256 feeTotalInETH, uint256 feeTotalInToken) {
         if (_gasRefund == 0 && feePercentage == 0) {
             return (0, 0);
         }
@@ -629,9 +613,7 @@ abstract contract BaseSwapProxy is
 
         uint8 tokenDecimals = _getDecimals(_token);
 
-        // To calculate the correct value here we must scale the value, either up or down depending on the decimals in _fromToken
-        uint256 amountInETH = _scaleAmountFromDecimals(
-            _amount * exchangeRateToETH,
+        uint256 amountInETH = (_amount * exchangeRateToETH).scale(
             tokenDecimals,
             18
         );
@@ -646,11 +628,11 @@ abstract contract BaseSwapProxy is
 
         feeTotalInETH = percentageFeeInETH + _gasRefund;
 
-        uint256 scaledFeeTotalFromToken = _scaleAmountFromDecimals(
-            feeTotalInETH,
+        uint256 scaledFeeTotalFromToken = feeTotalInETH.scale(
             18,
             tokenDecimals
         );
+
         uint256 scaledExchangeRate = uint256(1 ether) / (exchangeRateToETH);
 
         feeTotalInToken = scaledFeeTotalFromToken * scaledExchangeRate;
@@ -690,7 +672,7 @@ abstract contract BaseSwapProxy is
         } else {
             _handleApprovalFromThis(
                 _fromToken,
-                address(uniswapV3Router),
+                address(uniswapV2Router),
                 _amount
             );
         }

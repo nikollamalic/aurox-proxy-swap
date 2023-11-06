@@ -125,7 +125,7 @@ contract AuroxSwapProxy is
     function getExchangeRate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) external returns (uint256) {
+    ) external view returns (uint256) {
         return _getExchangeRate(_fromToken, _toToken);
     }
 
@@ -135,7 +135,7 @@ contract AuroxSwapProxy is
         uint256 _gasRefund
     )
         external
-        override
+        view
         returns (uint256 feeTotalInETH, uint256 feeTotalInToken)
     {
         return _calculatePercentageFeeInETH(_token, _amount, _gasRefund);

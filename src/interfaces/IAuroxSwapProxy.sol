@@ -66,7 +66,7 @@ interface IAuroxSwapProxy {
     function getExchangeRate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
-    ) external returns (uint256);
+    ) external view returns (uint256);
 
     /// @notice This function calculates the percentage fee amount in ETH for the _fromToken the user is swapping from. It is deducts the _gasRefund value to ensure the user is charged correctly
     /// @param _fromToken The token the user is swapping from
@@ -78,5 +78,5 @@ interface IAuroxSwapProxy {
         IERC20Extension _fromToken,
         uint256 _amount,
         uint256 _gasRefund
-    ) external returns (uint256 feeTotalInETH, uint256 feeTotalInFromToken);
+    ) external view returns (uint256 feeTotalInETH, uint256 feeTotalInFromToken);
 }

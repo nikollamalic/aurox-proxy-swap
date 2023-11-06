@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
 
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
@@ -8,16 +9,21 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import "../interfaces/IERC20Extension.sol";
 import "../interfaces/IWETH.sol";
+import "../interfaces/IOracle.sol";
 
-library UniswapV2Helpers {
-    IWETH constant WETH = IWETH(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+import "../libraries/Constants.sol";
+
+contract UniswapV2Oracle is IOracle {
+    IWETH constant WETH = IWETH(Constants.WETH);
 
     IUniswapV2Factory constant uniswapV2Factory =
         IUniswapV2Factory(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f);
 
+    IUniswapV2Router02 public immutable uniswapV2Router =
+        IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+
     /// @dev Simple wrapper for the swapTokensForExactETH uniswap V2 function
     function _swapTokensForExactETH(
-        IUniswapV2Router02 _uniswapV2Router,
         IERC20 _token,
         uint256 _amountOut,
         uint256 _amountInMaximum,
@@ -34,7 +40,7 @@ library UniswapV2Helpers {
         path[0] = address(_token);
         path[1] = address(WETH);
 
-        uint256[] memory amounts = _uniswapV2Router.swapTokensForExactETH(
+        uint256[] memory amounts = uniswapV2Router.swapTokensForExactETH(
             _amountOut,
             _amountInMaximum,
             path,
@@ -89,7 +95,6 @@ library UniswapV2Helpers {
 
     /// @dev Simple wrapper for the swapExactTokensForTokens uniswap V2 function
     function _swapExactTokensForTokens(
-        IUniswapV2Router02 _uniswapV2Router,
         IERC20 _fromToken,
         IERC20 _toToken,
         uint256 _amountIn,
@@ -98,7 +103,7 @@ library UniswapV2Helpers {
     ) internal returns (uint256 amountIn, uint256 amountOut) {
         address[] memory path = _returnUniswapV2Path(_fromToken, _toToken);
 
-        uint256[] memory amounts = _uniswapV2Router.swapExactTokensForTokens(
+        uint256[] memory amounts = uniswapV2Router.swapExactTokensForTokens(
             _amountIn,
             _amountOutMin,
             path,
@@ -112,7 +117,6 @@ library UniswapV2Helpers {
 
     /// @dev Simple wrapper for the swapExactETHForTokens uniswap V2 function
     function _swapExactETHForTokens(
-        IUniswapV2Router02 _uniswapV2Router,
         IERC20 _token,
         uint256 _amountIn,
         uint256 _amountOutMin,
@@ -122,7 +126,7 @@ library UniswapV2Helpers {
         path[0] = address(WETH);
         path[1] = address(_token);
 
-        uint256[] memory amounts = _uniswapV2Router.swapExactETHForTokens{
+        uint256[] memory amounts = uniswapV2Router.swapExactETHForTokens{
             value: _amountIn
         }(_amountOutMin, path, _to, block.timestamp);
 
@@ -150,5 +154,89 @@ library UniswapV2Helpers {
         );
 
         return (amounts[0], amounts[1]);
+    }
+
+    function _getUniswapV2Rate(
+        IERC20Extension _fromToken,
+        IERC20Extension _toToken
+    ) internal view returns (uint256) {
+        // Uniswap doesn't handle the ETH contract (0xeee), so update to WETH address for rate fetching
+        if (address(_fromToken) == Constants.ETH) {
+            _fromToken = WETH;
+        }
+
+        if (address(_toToken) == Constants.ETH) {
+            _toToken = WETH;
+        }
+
+        // The rate fetching path
+        address[] memory path = _returnUniswapV2Path(_fromToken, _toToken);
+
+        // The return path function will return an array of 0x0 addresses if it can't find a valid path
+        if (path.length == 0) return 0;
+
+        // To calculate the amount we need to provide an amountIn. This needs to be normalised based on the amount of decimals in the given _fromToken.
+        uint8 inputDecimals = address(_fromToken) == Constants.ETH
+            ? 18
+            : _fromToken.decimals();
+
+        // Apply the decimals to the amount
+        uint256 amountIn = 1 * 10 ** inputDecimals;
+
+        // Safely call the method
+        try uniswapV2Router.getAmountsOut(amountIn, path) returns (
+            uint256[] memory rate
+        ) {
+            return rate[path.length - 1];
+        } catch {
+            return 0;
+        }
+    }
+
+    function getPrice(
+        address fromToken,
+        address toToken
+    ) external view override returns (uint256) {
+        return
+            _getUniswapV2Rate(
+                IERC20Extension(fromToken),
+                IERC20Extension(toToken)
+            );
+    }
+
+    function swapTokens(
+        address fromToken,
+        address toToken,
+        uint256 amount,
+        uint256 minReturn
+    ) external override returns (uint256 amountReceived) {
+        if (fromToken == Constants.ETH) {
+            (, amountReceived) = _swapTokensForExactETH(
+                IERC20Extension(toToken),
+                amount,
+                minReturn,
+                msg.sender
+            );
+        } else if (toToken == Constants.ETH) {
+            (, amountReceived) = _swapExactTokensForETH(
+                uniswapV2Router,
+                IERC20Extension(fromToken),
+                amount,
+                minReturn,
+                msg.sender
+            );
+        } else {
+            _swapExactTokensForTokens(
+                IERC20Extension(fromToken),
+                IERC20Extension(toToken),
+                amount,
+                minReturn,
+                msg.sender
+            );
+        }
+
+        if (amountReceived < minReturn) {
+            revert NotEnoughFundsReturned(minReturn, amountReceived);
+        }
     }
 }
