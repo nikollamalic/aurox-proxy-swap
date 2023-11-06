@@ -4,15 +4,29 @@ import "forge-std/console.sol";
 import "@aurox/AuroxSwapProxy.sol";
 import "@aurox/interfaces/IAuroxSwapProxy.sol";
 
+import "./Faucet.t.sol";
+
 contract Fixture is Test {
     uint256 mainnetFork;
 
     AuroxSwapProxy auroxSwapProxy;
 
+    IERC20Extension usdc =
+        IERC20Extension(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+
+    IERC20Extension urus =
+        IERC20Extension(0xc6DdDB5bc6E61e0841C54f3e723Ae1f3A807260b);
+
+    function whitelistAddresses(address[] memory _addresses) public {
+        for (uint256 i = 0; i < _addresses.length; i++) {
+            auroxSwapProxy.addToWhitelist(_addresses[i]);
+        }
+    }
+
     function setUp() public {
         string memory MAINNET_RPC_URL = vm.envString("MAINNET_RPC_URL");
 
-        console.log("RPC", MAINNET_RPC_URL);
+        require(bytes(MAINNET_RPC_URL).length > 0, "MAINNET_RPC_URL is empty");
 
         mainnetFork = vm.createFork(MAINNET_RPC_URL);
 
@@ -20,34 +34,24 @@ contract Fixture is Test {
         vm.rollFork(18485380);
 
         auroxSwapProxy = new AuroxSwapProxy(
-            payable(0x34EcaA961c48148a1707B683655fFc5BCDafa8fB)
+            0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
         );
+
+        new Faucet(0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496).setUp(10 ether);
     }
 
     function test_balanceOf() public {
-        IERC20Extension urus = IERC20Extension(
-            0xc6DdDB5bc6E61e0841C54f3e723Ae1f3A807260b
-        );
         address user = 0xDF40aEBa2e9907E900089bCcf929ffcCD8fA4e0b;
-
-        console.log("User balance", user);
 
         assertEq(urus.balanceOf(user), 1661124124067554190);
     }
 
     function test_getExchangeRate() public {
-        IERC20Extension tokenIn = IERC20Extension(
-            0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
-        );
+        uint256 exchangeRate = auroxSwapProxy.getExchangeRate(urus, usdc);
 
-        IERC20Extension tokenOut = IERC20Extension(
-            0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
-        );
+        console.log("exchangeRate", exchangeRate);
 
-        console.log(
-            "Exchange rate",
-            auroxSwapProxy.getExchangeRate(tokenIn, tokenOut)
-        );
+        assertEq(exchangeRate, 1000000000000000000);
     }
 
     function test_swapWithFee() public {
@@ -75,12 +79,6 @@ contract Fixture is Test {
             0,
             0
         );
-
-        assertEq(1 == 1, 1 == 1);
-    }
-
-    function test_getQuote() public {
-        console.log("Mainnet fork", mainnetFork);
 
         assertEq(1 == 1, 1 == 1);
     }

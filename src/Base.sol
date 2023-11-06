@@ -609,6 +609,10 @@ abstract contract BaseSwapProxy is
 
         if (uniswapRate != 0) return uniswapRate;
 
+                // Fallback to uniswap V2 if needed
+        uint256 uniswapV2Rate = _getUniswapV2Rate(_fromToken, _toToken);
+
+
         revert("No Rate Found");
     }
 
