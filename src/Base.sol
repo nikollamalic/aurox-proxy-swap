@@ -18,6 +18,7 @@ import "./interfaces/IERC20Extension.sol";
 import "./interfaces/IAuroxSwapProxy.sol";
 import "./interfaces/IVault.sol";
 import "./interfaces/IFeedRegistry.sol";
+import "./interfaces/IOracle.sol";
 
 import "forge-std/console.sol";
 
