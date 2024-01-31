@@ -2,15 +2,15 @@ import {Test} from "forge-std/Test.sol";
 
 import "../fixture/Fixture.t.sol";
 
-import "@aurox/oracles/Chainlink.sol";
+import "@aurox/libraries/Chainlink.sol";
 import "@aurox/libraries/Constants.sol";
 
 contract ChainlinkOracleTest is Test, Fixture {
-    ChainlinkOracle oracle;
+    using ChainlinkOracle for IFeedRegistry;
+
+    IFeedRegistry oracle = IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf);
 
     constructor() {
-        oracle = new ChainlinkOracle();
-
         vm.makePersistent(Constants.WETH);
         vm.makePersistent(Constants.ETH);
 

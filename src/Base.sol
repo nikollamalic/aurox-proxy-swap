@@ -10,9 +10,10 @@ import {SD59x18} from "@prb/math/SD59x18.sol";
 import {UD60x18} from "@prb/math/UD60x18.sol";
 
 import "./libraries/SafeCast160.sol";
-import "./libraries/UniswapV2Helper.sol";
 import "./libraries/DecimalScaler.sol";
 import "./libraries/Constants.sol";
+import "./libraries/Chainlink.sol";
+import "./libraries/UniswapV2.sol";
 
 import "./interfaces/IERC20Extension.sol";
 import "./interfaces/IAuroxSwapProxy.sol";
@@ -33,7 +34,8 @@ abstract contract BaseSwapProxy is
 
     using SafeCast160 for uint256;
     using DecimalScaler for uint256;
-    using UniswapV2Helpers for IUniswapV2Router02;
+    using UniswapV2 for IUniswapV2Router02;
+    using ChainlinkOracle for IFeedRegistry;
 
     IERC20Extension public immutable WETH = IERC20Extension(Constants.WETH);
 
@@ -160,7 +162,7 @@ abstract contract BaseSwapProxy is
         );
 
         (uint256 swappedAmountIn, ) = uniswapV2Router._swapTokensForExactETH(
-            _toToken,
+            IERC20(_toToken),
             _feeTotalInETH,
             amountReturnedAfterFee,
             address(this)
@@ -489,94 +491,6 @@ abstract contract BaseSwapProxy is
         }
     }
 
-    /// @dev Function simply gets the decimals for the provided _token parameter and then scales the _amount accordingly
-    function _scaleAmountFromTokenDecimals(
-        IERC20Extension _token,
-        uint256 _amount,
-        uint8 _inputDecimals
-    ) internal view returns (uint256 amount) {
-        uint8 decimals = _getDecimals(_token);
-
-        return _amount.scale(_inputDecimals, decimals);
-    }
-
-    function _getChainlinkRate(
-        IERC20Extension _fromToken,
-        IERC20Extension _toToken
-    ) internal view returns (uint256 exchangeRate) {
-        // Chainlink doesn't handle WETH, which seems a bit silly, so modify it to use the 0xeee "ETH" contract
-        if (_fromToken == WETH) {
-            _fromToken = ethContract;
-        }
-
-        if (_toToken == WETH) {
-            _toToken = ethContract;
-        }
-
-        // Try to get a direct rate for the provided pair
-        uint256 directRate = tryGetChainlinkRate(_fromToken, _toToken);
-
-        if (directRate != 0) {
-            // Provide 18 as the current decimals as this is how chainlink returns its price data
-            return _scaleAmountFromTokenDecimals(_toToken, directRate, 18);
-        }
-
-        // If no direct rate exists and either token is ETH, return now
-        if (_fromToken == ethContract || _toToken == ethContract) {
-            return 0;
-        }
-
-        // Otherwise try and get a rate by going: _fromToken -> ETH -> _toToken
-        uint256 toETHRate = tryGetChainlinkRate(_fromToken, ethContract);
-        uint256 fromETHRate = tryGetChainlinkRate(ethContract, _toToken);
-
-        // If both rates returned, calculate the ratio between the two, then scale it to the correct decimals
-        if (toETHRate != 0 && fromETHRate != 0) {
-            uint256 derivedRate = toETHRate * fromETHRate;
-            return _scaleAmountFromTokenDecimals(_toToken, derivedRate, 18);
-        }
-
-        return 0;
-    }
-
-    function _getUniswapV2Rate(
-        IERC20Extension _fromToken,
-        IERC20Extension _toToken
-    ) internal view returns (uint256) {
-        // Uniswap doesn't handle the ETH contract (0xeee), so update to WETH address for rate fetching
-        if (_fromToken == ethContract) {
-            _fromToken = WETH;
-        }
-
-        if (_toToken == ethContract) {
-            _toToken = WETH;
-        }
-
-        // The rate fetching path
-        address[] memory path = UniswapV2Helpers._returnUniswapV2Path(
-            _fromToken,
-            _toToken
-        );
-
-        // The return path function will return an array of 0x0 addresses if it can't find a valid path
-        if (path.length == 0) return 0;
-
-        // To calculate the amount we need to provide an amountIn. This needs to be normalised based on the amount of decimals in the given _fromToken.
-        uint8 inputDecimals = _getDecimals(_fromToken);
-
-        // Apply the decimals to the amount
-        uint256 amountIn = 1 * 10 ** inputDecimals;
-
-        // Safely call the method
-        try uniswapV2Router.getAmountsOut(amountIn, path) returns (
-            uint256[] memory rate
-        ) {
-            return rate[path.length - 1];
-        } catch {
-            return 0;
-        }
-    }
-
     function _getExchangeRate(
         IERC20Extension _fromToken,
         IERC20Extension _toToken
@@ -589,12 +503,12 @@ abstract contract BaseSwapProxy is
             return 1 ether;
         }
 
-        uint256 chainlinkRate = _getChainlinkRate(_fromToken, _toToken);
+        uint256 chainlinkRate = feedRegistry.getPrice(_fromToken, _toToken);
 
         if (chainlinkRate != 0) return chainlinkRate;
 
         // Fallback to uniswap V2 if needed
-        uint256 uniswapV2Rate = _getUniswapV2Rate(_fromToken, _toToken);
+        uint256 uniswapV2Rate = uniswapV2Router.getPrice(_fromToken, _toToken);
 
         if (uniswapV2Rate != 0) return uniswapV2Rate;
 

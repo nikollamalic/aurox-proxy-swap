@@ -11,15 +11,12 @@ import "@aurox/libraries/Constants.sol";
 import {UD60x18, ud, intoUint256} from "prb-math/UD60x18.sol";
 import {SD59x18, sd} from "prb-math/SD59x18.sol";
 
-contract ChainlinkOracle is IOracle {
+library ChainlinkOracle {
     using DecimalScaler for UD60x18;
     using DecimalScaler for uint256;
 
-    // Chainlink feedRegistry
-    IFeedRegistry public immutable feedRegistry =
-        IFeedRegistry(0x47Fb2585D2C56Fe188D0E6ec628a38b74fCeeeDf);
-
     function tryGetChainlinkRate(
+        IFeedRegistry _feedRegistry,
         address _fromToken,
         address _toToken
     ) internal view returns (uint256) {
@@ -33,7 +30,7 @@ contract ChainlinkOracle is IOracle {
             _toToken = Constants.ETH;
         }
 
-        try feedRegistry.latestRoundData(_fromToken, _toToken) returns (
+        try _feedRegistry.latestRoundData(_fromToken, _toToken) returns (
             uint80 roundId,
             int256 chainlinkPrice,
             uint256,
@@ -53,10 +50,11 @@ contract ChainlinkOracle is IOracle {
         }
     }
 
-    function getPrice(
+    function _getPrice(
+        IFeedRegistry _feedRegistry,
         address _fromToken,
         address _toToken
-    ) external view override returns (uint256) {
+    ) internal view returns (uint256) {
         // Chainlink doesn't handle WETH, which seems a bit silly,
         // so modify it to use the 0xeee "ETH" contract
         if (_fromToken == Constants.WETH) {
@@ -72,7 +70,11 @@ contract ChainlinkOracle is IOracle {
             : IERC20Extension(_toToken).decimals();
 
         // Try to get a direct rate for the provided pair
-        uint256 directRate = tryGetChainlinkRate(_fromToken, _toToken);
+        uint256 directRate = tryGetChainlinkRate(
+            _feedRegistry,
+            _fromToken,
+            _toToken
+        );
 
         if (directRate != 0) {
             return directRate.scale(18, _toDecimals);
@@ -84,8 +86,16 @@ contract ChainlinkOracle is IOracle {
         }
 
         // Otherwise try and get a rate by going: _fromToken -> ETH -> _toToken
-        uint256 toETHRate = tryGetChainlinkRate(_fromToken, Constants.ETH);
-        uint256 fromETHRate = tryGetChainlinkRate(Constants.ETH, _toToken);
+        uint256 toETHRate = tryGetChainlinkRate(
+            _feedRegistry,
+            _fromToken,
+            Constants.ETH
+        );
+        uint256 fromETHRate = tryGetChainlinkRate(
+            _feedRegistry,
+            Constants.ETH,
+            _toToken
+        );
 
         // If both rates returned, calculate the ratio between the two, then scale it to the correct decimals
         if (toETHRate != 0 && fromETHRate != 0) {
@@ -95,12 +105,19 @@ contract ChainlinkOracle is IOracle {
         return 0;
     }
 
-    function swapTokens(
-        address fromToken,
-        address toToken,
-        uint256 amountIn,
-        uint256 amountOut
-    ) external pure override returns (uint256) {
-        revert("Not implemented");
+    function getPrice(
+        IFeedRegistry _feedRegistry,
+        address _fromToken,
+        address _toToken
+    ) internal view returns (uint256) {
+        return _getPrice(_feedRegistry, _fromToken, _toToken);
+    }
+
+    function getPrice(
+      IFeedRegistry _feedRegistry,
+      IERC20Extension _fromToken,
+      IERC20Extension _toToken
+    ) internal view returns (uint256) {
+        return _getPrice(_feedRegistry, address(_fromToken), address(_toToken));
     }
 }

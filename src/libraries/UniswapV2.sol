@@ -13,17 +13,15 @@ import "../interfaces/IOracle.sol";
 
 import "../libraries/Constants.sol";
 
-contract UniswapV2Oracle is IOracle {
+library UniswapV2 {
     IWETH constant WETH = IWETH(Constants.WETH);
 
     IUniswapV2Factory constant uniswapV2Factory =
         IUniswapV2Factory(0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f);
 
-    IUniswapV2Router02 public immutable uniswapV2Router =
-        IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-
     /// @dev Simple wrapper for the swapTokensForExactETH uniswap V2 function
     function _swapTokensForExactETH(
+        IUniswapV2Router02 _uniswapV2Router,
         IERC20 _token,
         uint256 _amountOut,
         uint256 _amountInMaximum,
@@ -40,7 +38,7 @@ contract UniswapV2Oracle is IOracle {
         path[0] = address(_token);
         path[1] = address(WETH);
 
-        uint256[] memory amounts = uniswapV2Router.swapTokensForExactETH(
+        uint256[] memory amounts = _uniswapV2Router.swapTokensForExactETH(
             _amountOut,
             _amountInMaximum,
             path,
@@ -53,6 +51,7 @@ contract UniswapV2Oracle is IOracle {
 
     /// @notice This function calculates a path for swapping _fromToken for _toToken
     function _returnUniswapV2Path(
+        IUniswapV2Router02 _uniswapV2Router,
         IERC20 _fromToken,
         IERC20 _toToken
     ) internal view returns (address[] memory path) {
@@ -95,15 +94,20 @@ contract UniswapV2Oracle is IOracle {
 
     /// @dev Simple wrapper for the swapExactTokensForTokens uniswap V2 function
     function _swapExactTokensForTokens(
+        IUniswapV2Router02 _uniswapV2Router,
         IERC20 _fromToken,
         IERC20 _toToken,
         uint256 _amountIn,
         uint256 _amountOutMin,
         address _to
     ) internal returns (uint256 amountIn, uint256 amountOut) {
-        address[] memory path = _returnUniswapV2Path(_fromToken, _toToken);
+        address[] memory path = _returnUniswapV2Path(
+            _uniswapV2Router,
+            _fromToken,
+            _toToken
+        );
 
-        uint256[] memory amounts = uniswapV2Router.swapExactTokensForTokens(
+        uint256[] memory amounts = _uniswapV2Router.swapExactTokensForTokens(
             _amountIn,
             _amountOutMin,
             path,
@@ -117,6 +121,7 @@ contract UniswapV2Oracle is IOracle {
 
     /// @dev Simple wrapper for the swapExactETHForTokens uniswap V2 function
     function _swapExactETHForTokens(
+        IUniswapV2Router02 _uniswapV2Router,
         IERC20 _token,
         uint256 _amountIn,
         uint256 _amountOutMin,
@@ -126,7 +131,7 @@ contract UniswapV2Oracle is IOracle {
         path[0] = address(WETH);
         path[1] = address(_token);
 
-        uint256[] memory amounts = uniswapV2Router.swapExactETHForTokens{
+        uint256[] memory amounts = _uniswapV2Router.swapExactETHForTokens{
             value: _amountIn
         }(_amountOutMin, path, _to, block.timestamp);
 
@@ -157,6 +162,7 @@ contract UniswapV2Oracle is IOracle {
     }
 
     function _getUniswapV2Rate(
+        IUniswapV2Router02 _uniswapV2Router,
         IERC20Extension _fromToken,
         IERC20Extension _toToken
     ) internal view returns (uint256) {
@@ -170,7 +176,11 @@ contract UniswapV2Oracle is IOracle {
         }
 
         // The rate fetching path
-        address[] memory path = _returnUniswapV2Path(_fromToken, _toToken);
+        address[] memory path = _returnUniswapV2Path(
+            _uniswapV2Router,
+            _fromToken,
+            _toToken
+        );
 
         // The return path function will return an array of 0x0 addresses if it can't find a valid path
         if (path.length == 0) return 0;
@@ -184,7 +194,7 @@ contract UniswapV2Oracle is IOracle {
         uint256 amountIn = 1 * 10 ** inputDecimals;
 
         // Safely call the method
-        try uniswapV2Router.getAmountsOut(amountIn, path) returns (
+        try _uniswapV2Router.getAmountsOut(amountIn, path) returns (
             uint256[] memory rate
         ) {
             return rate[path.length - 1];
@@ -194,49 +204,23 @@ contract UniswapV2Oracle is IOracle {
     }
 
     function getPrice(
+        IUniswapV2Router02 uniswapV2Router,
+        IERC20Extension fromToken,
+        IERC20Extension toToken
+    ) internal view returns (uint256) {
+        return _getUniswapV2Rate(uniswapV2Router, fromToken, toToken);
+    }
+
+    function getPrice(
+        IUniswapV2Router02 uniswapV2Router,
         address fromToken,
         address toToken
-    ) external view override returns (uint256) {
+    ) internal view returns (uint256) {
         return
             _getUniswapV2Rate(
+                uniswapV2Router,
                 IERC20Extension(fromToken),
                 IERC20Extension(toToken)
             );
-    }
-
-    function swapTokens(
-        address fromToken,
-        address toToken,
-        uint256 amount,
-        uint256 minReturn
-    ) external override returns (uint256 amountReceived) {
-        if (fromToken == Constants.ETH) {
-            (, amountReceived) = _swapTokensForExactETH(
-                IERC20Extension(toToken),
-                amount,
-                minReturn,
-                msg.sender
-            );
-        } else if (toToken == Constants.ETH) {
-            (, amountReceived) = _swapExactTokensForETH(
-                uniswapV2Router,
-                IERC20Extension(fromToken),
-                amount,
-                minReturn,
-                msg.sender
-            );
-        } else {
-            _swapExactTokensForTokens(
-                IERC20Extension(fromToken),
-                IERC20Extension(toToken),
-                amount,
-                minReturn,
-                msg.sender
-            );
-        }
-
-        if (amountReceived < minReturn) {
-            revert NotEnoughFundsReturned(minReturn, amountReceived);
-        }
     }
 }

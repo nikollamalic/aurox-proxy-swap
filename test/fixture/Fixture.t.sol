@@ -6,7 +6,7 @@ import "@aurox/interfaces/IAuroxSwapProxy.sol";
 
 import "./Faucet.t.sol";
 
-contract Fixture is Test {
+abstract contract Fixture is Test {
     uint256 mainnetFork;
 
     AuroxSwapProxy auroxSwapProxy;
@@ -23,7 +23,7 @@ contract Fixture is Test {
         }
     }
 
-    function setUp() public {
+    function setUp() public virtual {
         string memory MAINNET_RPC_URL = vm.envString("MAINNET_RPC_URL");
 
         require(bytes(MAINNET_RPC_URL).length > 0, "MAINNET_RPC_URL is empty");
@@ -33,9 +33,7 @@ contract Fixture is Test {
         vm.selectFork(mainnetFork);
         vm.rollFork(18485380);
 
-        auroxSwapProxy = new AuroxSwapProxy(
-            0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
-        );
+        auroxSwapProxy = new AuroxSwapProxy(address(this));
 
         new Faucet(0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496).setUp(10 ether);
     }

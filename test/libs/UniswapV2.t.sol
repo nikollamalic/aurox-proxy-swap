@@ -3,15 +3,16 @@ import {Test} from "forge-std/Test.sol";
 
 import "../fixture/Fixture.t.sol";
 
-import "@aurox/oracles/UniswapV2.sol";
+import "@aurox/libraries/UniswapV2.sol";
 import "@aurox/libraries/Constants.sol";
 
 contract UniswapV2OracleTest is Test, Fixture {
-    UniswapV2Oracle oracle;
+    using UniswapV2 for IUniswapV2Router02;
+
+    IUniswapV2Router02 oracle =
+        IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
     constructor() {
-        oracle = new UniswapV2Oracle();
-
         vm.makePersistent(Constants.WETH);
         vm.makePersistent(Constants.ETH);
 
